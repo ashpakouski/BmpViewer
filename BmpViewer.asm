@@ -29,6 +29,12 @@ noError:
         invoke  HeapAlloc, [Handle.processHeap], HEAP_ZERO_MEMORY, [Image.size]
         mov     [Image.bytesPtr], EAX
 
+        invoke  ReadFile, [Handle.file], [Image.bytesPtr], [Image.size], NULL, NULL
+
+        stdcall GetBmpOffset, [Image.bytesPtr], Image.offset
+        stdcall GetBmpWidth, [Image.bytesPtr], Image.width
+        stdcall GetBmpHeight, [Image.bytesPtr], Image.height
+
 ;        mov     EBX, 0
 ;@@:
 ;        invoke  SetConsoleTextAttribute, [stdout], EBX
@@ -53,16 +59,36 @@ proc    GetStdin
         ret
 endp
 
+proc    GetBmpOffset, bmpBytesPtr, resultDwordPtr
+        stdcall GetBmpParam, [bmpBytesPtr], [resultDwordPtr], 0x0A
+        ret
+endp
+
+proc    GetBmpWidth, bmpBytesPtr, resultDwordPtr
+        stdcall GetBmpParam, [bmpBytesPtr], [resultDwordPtr], 0x12
+        ret
+endp
+
+proc    GetBmpHeight, bmpBytesPtr, resultDwordPtr
+        stdcall GetBmpParam, [bmpBytesPtr], [resultDwordPtr], 0x16
+        ret
+endp
+
+proc    GetBmpParam, bmpBytesPtr, resultPtr, paramOffset
+        mov     EAX, [bmpBytesPtr]
+        add     EAX, [paramOffset]
+        mov     EBX, [EAX]
+        mov     EDX, [resultPtr]
+        mov     [EDX], EBX
+        ret
+endp
+
 ; ======== Data ========
 section         '.data' data readable writeable
 
 Error:
         .cantOpenFile   db      "Can't open file: "
         .cantOpenFile_:
-
-sampleText              db      " ",  219, 10
-sampleText_:
-
 
 TestFile:
         .path           db      "file\path\image.bmp", 0
@@ -80,6 +106,9 @@ Handle:
         .processHeap    dd      ?
 
 Image:
+        .width          dd      ?
+        .height         dd      ?
+        .offset         dd      ?
         .size           dd      ?
         .bytesPtr       dd      ?
 
@@ -97,6 +126,7 @@ import          Kernel32,\
                 ExitProcess, 'ExitProcess',\
                 SetConsoleTitle, 'SetConsoleTitleA',\
                 CreateFileA, 'CreateFileA',\
+                ReadFile, 'ReadFile',\
                 SetConsoleTextAttribute, 'SetConsoleTextAttribute',\
                 GetFileSize, 'GetFileSize',\
                 GetProcessHeap, 'GetProcessHeap',\
