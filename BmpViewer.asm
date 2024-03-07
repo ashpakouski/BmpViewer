@@ -32,6 +32,7 @@ noError:
         invoke  ReadFile, [Handle.file], [Image.bytesPtr], [Image.size], NULL, NULL
 
         stdcall GetBmpOffset, [Image.bytesPtr], Image.offset
+        stdcall GetBmpOffset, [Image.bytesPtr], Image.offset   ; TODO: FOLLOW CALL CONVENTION!
         stdcall GetBmpWidth, [Image.bytesPtr], Image.width
         stdcall GetBmpHeight, [Image.bytesPtr], Image.height
 
@@ -80,6 +81,20 @@ proc    GetBmpParam, bmpBytesPtr, resultPtr, paramOffset
         mov     EBX, [EAX]
         mov     EDX, [resultPtr]
         mov     [EDX], EBX
+        ret
+endp
+
+proc    GetPixel, bmpBytesPtr, bmpOffset, bmpWidth, bmpHeight, pixelX, pixelY
+        mov     EAX, [bmpHeight]
+        dec     EAX
+        sub     EAX, [pixelY]
+        mul     [bmpWidth]
+        add     EAX, [pixelX]
+        mov     EBX, 3
+        mul     EBX
+        add     EAX, [bmpOffset]
+        add     EAX, [bmpBytesPtr]
+        mov     EAX, [EAX]
         ret
 endp
 
