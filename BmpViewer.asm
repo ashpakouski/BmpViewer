@@ -84,6 +84,8 @@ proc    GetBmpParam, bmpBytesPtr, resultPtr, paramOffset
         ret
 endp
 
+        ; Result: xx BB RR GG
+        ;                  ^^ AL
 proc    GetPixel, bmpBytesPtr, bmpOffset, bmpWidth, bmpHeight, pixelX, pixelY
         mov     EAX, [bmpHeight]
         dec     EAX
@@ -95,6 +97,67 @@ proc    GetPixel, bmpBytesPtr, bmpOffset, bmpWidth, bmpHeight, pixelX, pixelY
         add     EAX, [bmpOffset]
         add     EAX, [bmpBytesPtr]
         mov     EAX, [EAX]
+        ret
+endp
+
+proc    ConvertPixel, pixel, colorTable, tableSize
+        locals
+                b          db      ?
+                g          db      ?
+                r          db      ?
+                minSum     dd      0xEFFFFFFF
+                minColorId dd      ?
+                currentSum dd      ?
+        endl
+
+        mov     EAX, [pixel]
+        mov     [b], AL
+        shr     EAX, 8
+        mov     [g], AL
+        shr     EAX, 8
+        mov     [r], AL
+
+        mov     ECX, 0
+tableLoop:
+        mov     EAX, 3
+        mul     ECX
+        add     EAX, [colorTable]
+        mov     EBX, EAX
+
+        mov     [currentSum], 0
+
+        movzx   EAX, [b]
+        movzx   EDX, byte[EBX]
+        sub     EAX, EDX
+        mul     EAX
+        add     [currentSum], EAX
+        inc     EBX
+
+        movzx   EAX, [g]
+        movzx   EDX, byte[EBX]
+        sub     EAX, EDX
+        mul     EAX
+        add     [currentSum], EAX
+        inc     EBX
+
+        movzx   EAX, [r]
+        movzx   EDX, byte[EBX]
+        sub     EAX, EDX
+        mul     EAX
+        add     [currentSum], EAX
+
+        mov     EAX, [currentSum]
+        cmp     EAX, [minSum]
+        jae     @F
+        mov     [minSum], EAX
+        mov     [minColorId], ECX
+@@:
+
+        inc     ECX
+        cmp     ECX, [tableSize]
+        jb      tableLoop
+
+        mov     EAX, [minColorId]
         ret
 endp
 
