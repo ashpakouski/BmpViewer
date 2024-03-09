@@ -2,13 +2,16 @@ format      PE console 4.0
 
 entry       start
 
-include     'win32a.inc'
+include     "win32a.inc"
 
-section     '.text' code readable executable
+section     ".text" code readable executable
  
 start:
-        stdcall GetStdout
-        stdcall GetStdin
+        invoke  SetConsoleTitle, title
+        invoke  GetStdHandle, STD_OUTPUT_HANDLE
+        mov     [Handle.stdout], EAX
+        invoke  GetStdHandle, STD_INPUT_HANDLE
+        mov     [Handle.stdin], EAX
 
         invoke  CreateFileA, TestFile.path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL
         mov     [Handle.file], EAX
@@ -30,57 +33,58 @@ noError:
         mov     [Image.bytesPtr], EAX
 
         invoke  ReadFile, [Handle.file], [Image.bytesPtr], [Image.size], NULL, NULL
-
-        stdcall GetBmpOffset, [Image.bytesPtr], Image.offset
-        stdcall GetBmpOffset, [Image.bytesPtr], Image.offset   ; TODO: FOLLOW CALL CONVENTION!
+        stdcall GetBmpOffset, [Image.bytesPtr]
+        mov     [Image.offset], EAX
         stdcall GetBmpWidth, [Image.bytesPtr], Image.width
+        mov     [Image.width], EAX
         stdcall GetBmpHeight, [Image.bytesPtr], Image.height
+        mov     [Image.height], EAX
 
-;        mov     EBX, 0
-;@@:
-;        invoke  SetConsoleTextAttribute, [stdout], EBX
-;        invoke  WriteConsole, [stdout], sampleText, sampleText_ - sampleText, NULL, NULL
-;        inc     EBX
-;        cmp     EBX, 256
-;        jne     @B
+@@:
+        xor     EAX, EAX
+outerLoop:
+        xor     EBX, EBX
+innerLoop:
+        pushad
+        stdcall GetPixel, [Image.bytesPtr], [Image.offset], [Image.width], [Image.height], EBX, EAX
+        stdcall ConvertPixel, EAX, ColorTable, (ColorTable_ - ColorTable) / 3
+
+        invoke  SetConsoleTextAttribute, [Handle.stdout], EAX
+        invoke  WriteConsole, [Handle.stdout], sampleText, sampleText_ - sampleText, NULL, NULL
+
+        popad
+
+        inc     EBX
+        cmp     EBX, [Image.width]
+        jb      innerLoop
+
+        inc     EAX
+        cmp     EAX, [Image.height]
+        jb      outerLoop
 
 exit:
         invoke  ReadConsole, [Handle.stdin], lpBuffer, 1, lpCharsRead, NULL
         invoke  ExitProcess, 0
 
-proc    GetStdout
-        invoke  GetStdHandle, STD_OUTPUT_HANDLE
-        mov     [Handle.stdout], EAX
+proc    GetBmpOffset, bmpBytesPtr
+        stdcall GetBmpParam, [bmpBytesPtr], 0x0A
         ret
 endp
 
-proc    GetStdin
-        invoke  GetStdHandle, STD_INPUT_HANDLE
-        mov     [Handle.stdin], EAX
+proc    GetBmpWidth, bmpBytesPtr
+        stdcall GetBmpParam, [bmpBytesPtr], 0x12
         ret
 endp
 
-proc    GetBmpOffset, bmpBytesPtr, resultDwordPtr
-        stdcall GetBmpParam, [bmpBytesPtr], [resultDwordPtr], 0x0A
+proc    GetBmpHeight, bmpBytesPtr
+        stdcall GetBmpParam, [bmpBytesPtr], 0x16
         ret
 endp
 
-proc    GetBmpWidth, bmpBytesPtr, resultDwordPtr
-        stdcall GetBmpParam, [bmpBytesPtr], [resultDwordPtr], 0x12
-        ret
-endp
-
-proc    GetBmpHeight, bmpBytesPtr, resultDwordPtr
-        stdcall GetBmpParam, [bmpBytesPtr], [resultDwordPtr], 0x16
-        ret
-endp
-
-proc    GetBmpParam, bmpBytesPtr, resultPtr, paramOffset
+proc    GetBmpParam, bmpBytesPtr, paramOffset
         mov     EAX, [bmpBytesPtr]
         add     EAX, [paramOffset]
-        mov     EBX, [EAX]
-        mov     EDX, [resultPtr]
-        mov     [EDX], EBX
+        mov     EAX, [EAX]
         ret
 endp
 
@@ -96,7 +100,7 @@ proc    GetPixel, bmpBytesPtr, bmpOffset, bmpWidth, bmpHeight, pixelX, pixelY
         mul     EBX
         add     EAX, [bmpOffset]
         add     EAX, [bmpBytesPtr]
-        mov     EAX, [EAX]
+        mov     EAX, [EAX] ; FIXME: Access violation?
         ret
 endp
 
@@ -162,7 +166,10 @@ tableLoop:
 endp
 
 ; ======== Data ========
-section         '.data' data readable writeable
+section         ".data" data readable writeable
+
+sampleText      db      2 dup 219
+sampleText_:
 
 Error:
         .cantOpenFile   db      "Can't open file: "
@@ -190,22 +197,22 @@ Image:
         .size           dd      ?
         .bytesPtr       dd      ?
 
-include 'Colors.asm'
+include 'ColorTable.asm'
 
 ; ======== Imports ========
-section         '.idata' import data readable
+section         ".idata" import data readable
  
-library         Kernel32, 'Kernel32.dll'
+library         Kernel32, "Kernel32.dll"
  
 import          Kernel32,\
-                GetStdHandle, 'GetStdHandle',\
-                WriteConsole, 'WriteConsoleA',\
-                ReadConsole, 'ReadConsoleA',\
-                ExitProcess, 'ExitProcess',\
-                SetConsoleTitle, 'SetConsoleTitleA',\
-                CreateFileA, 'CreateFileA',\
-                ReadFile, 'ReadFile',\
-                SetConsoleTextAttribute, 'SetConsoleTextAttribute',\
-                GetFileSize, 'GetFileSize',\
-                GetProcessHeap, 'GetProcessHeap',\
-                HeapAlloc, 'HeapAlloc'
+                GetStdHandle, "GetStdHandle",\
+                WriteConsole, "WriteConsoleA",\
+                ReadConsole, "ReadConsoleA",\
+                ExitProcess, "ExitProcess",\
+                SetConsoleTitle, "SetConsoleTitleA",\
+                CreateFileA, "CreateFileA",\
+                ReadFile, "ReadFile",\
+                SetConsoleTextAttribute, "SetConsoleTextAttribute",\
+                GetFileSize, "GetFileSize",\
+                GetProcessHeap, "GetProcessHeap",\
+                HeapAlloc, "HeapAlloc"
