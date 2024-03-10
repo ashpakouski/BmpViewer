@@ -40,6 +40,8 @@ noError:
         stdcall GetBmpHeight, [Image.bytesPtr], Image.height
         mov     [Image.height], EAX
 
+        stdcall SetConsoleSize, [Handle.stdout], [Image.width], [Image.height]
+
 @@:
         xor     EAX, EAX
 outerLoop:
@@ -65,6 +67,33 @@ innerLoop:
 exit:
         invoke  ReadConsole, [Handle.stdin], lpBuffer, 1, lpCharsRead, NULL
         invoke  ExitProcess, 0
+
+proc    SetConsoleSize, stdoutHandle, width, height
+        locals
+                windowSize  dw      4 dup ?     ; https://learn.microsoft.com/en-us/windows/console/small-rect-str
+                bufferSize  dw      2 dup ?     ; https://learn.microsoft.com/en-us/windows/console/coord-str
+        endl
+
+        xor     EAX, EAX
+        mov     dword[windowSize], EAX ; Fills 4 bytes
+        mov     EAX, [width]
+        mov     EBX, 2
+        mul     EBX
+        mov     [bufferSize], AX
+        dec     EAX
+        mov     [windowSize + 4], AX
+
+        mov     EAX, [height]
+        mov     [bufferSize + 2], AX
+        dec     EAX
+        mov     [windowSize + 6], AX
+
+        lea     EAX, [windowSize]
+        invoke  SetConsoleWindowInfo, [stdoutHandle], 1, EAX
+        lea     EAX, [bufferSize]
+        invoke  SetConsoleScreenBufferSize, [stdoutHandle], EAX
+        ret
+endp
 
 proc    GetBmpOffset, bmpBytesPtr
         stdcall GetBmpParam, [bmpBytesPtr], 0x0A
@@ -106,12 +135,12 @@ endp
 
 proc    ConvertPixel, pixel, colorTable, tableSize
         locals
-                b          db      ?
-                g          db      ?
-                r          db      ?
-                minSum     dd      0xEFFFFFFF
-                minColorId dd      ?
-                currentSum dd      ?
+                b           db      ?
+                g           db      ?
+                r           db      ?
+                minSum      dd      0xEFFFFFFF
+                minColorId  dd      ?
+                currentSum  dd      ?
         endl
 
         mov     EAX, [pixel]
@@ -215,4 +244,6 @@ import          Kernel32,\
                 SetConsoleTextAttribute, "SetConsoleTextAttribute",\
                 GetFileSize, "GetFileSize",\
                 GetProcessHeap, "GetProcessHeap",\
-                HeapAlloc, "HeapAlloc"
+                HeapAlloc, "HeapAlloc",\
+                SetConsoleWindowInfo, "SetConsoleWindowInfo",\
+                SetConsoleScreenBufferSize, "SetConsoleScreenBufferSize"
