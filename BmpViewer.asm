@@ -7,7 +7,7 @@ include     "win32a.inc"
 section     ".text" code readable executable
  
 start:
-        invoke  SetConsoleTitle, title
+        invoke  SetConsoleTitle, String.appTitle
         invoke  GetStdHandle, STD_OUTPUT_HANDLE
         mov     [Handle.stdout], EAX
         invoke  GetStdHandle, STD_INPUT_HANDLE
@@ -52,13 +52,16 @@ innerLoop:
         stdcall ConvertPixel, EAX, ColorTable, (ColorTable_ - ColorTable) / 3
 
         invoke  SetConsoleTextAttribute, [Handle.stdout], EAX
-        invoke  WriteConsole, [Handle.stdout], sampleText, sampleText_ - sampleText, NULL, NULL
-
+        invoke  WriteConsole, [Handle.stdout], String.pixel, String.pixel_ - String.pixel, NULL, NULL
         popad
 
         inc     EBX
         cmp     EBX, [Image.width]
         jb      innerLoop
+
+        pushad
+        stdcall AddCrlfIfNeeded
+        popad
 
         inc     EAX
         cmp     EAX, [Image.height]
@@ -67,6 +70,17 @@ innerLoop:
 exit:
         invoke  ReadConsole, [Handle.stdin], lpBuffer, 1, lpCharsRead, NULL
         invoke  ExitProcess, 0
+
+proc    AddCrlfIfNeeded
+        mov     EAX, [Image.width]
+        mov     EBX, 2
+        mul     EBX
+        cmp     EAX, [Console.defaultWidth]
+        jae     @F
+        invoke  WriteConsole, [Handle.stdout], String.crlf, String.crlf_ - String.crlf, NULL, NULL
+@@:
+        ret
+endp
 
 proc    SetConsoleSize, stdoutHandle, width, height
         locals
@@ -197,8 +211,12 @@ endp
 ; ======== Data ========
 section         ".data" data readable writeable
 
-sampleText      db      2 dup 219
-sampleText_:
+String:
+        .pixel          db      2 dup 219
+        .pixel_:
+        .crlf           db      13, 10
+        .crlf_:
+        .appTitle       db      "Pixel Viewer", 0
 
 Error:
         .cantOpenFile   db      "Can't open file: "
@@ -209,9 +227,11 @@ TestFile:
         .path_:
 
 Const:
-title           db      "Pixel Viewer", 0
 lpBuffer        db      10 dup (0)
 lpCharsRead     dd      ?
+
+Console:
+        .defaultWidth   dd      120
 
 Handle:
         .stdin          dd      ?
