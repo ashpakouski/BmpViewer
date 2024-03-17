@@ -7,19 +7,22 @@ include     "win32a.inc"
 section     ".text" code readable executable
  
 start:
-        invoke  SetConsoleTitle, String.appTitle
         invoke  GetStdHandle, STD_OUTPUT_HANDLE
         mov     [Handle.stdout], EAX
         invoke  GetStdHandle, STD_INPUT_HANDLE
         mov     [Handle.stdin], EAX
 
-        invoke  CreateFileA, TestFile.path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL
+        invoke  SetConsoleTitle, String.appTitle
+
+        invoke  GetCommandLine
+        invoke  PathGetArgs, EAX
+        invoke  CreateFileA, EAX, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL
         mov     [Handle.file], EAX
 
         cmp     EAX, INVALID_HANDLE_VALUE
         jne     noError
         invoke  WriteConsole, [Handle.stdout], Error.cantOpenFile, Error.cantOpenFile_ - Error.cantOpenFile, NULL, NULL
-        invoke  WriteConsole, [Handle.stdout], TestFile.path, TestFile.path_ - TestFile.path, NULL, NULL
+        ;invoke  WriteConsole, [Handle.stdout], TestFile.path, TestFile.path_ - TestFile.path, NULL, NULL
         jmp     exit
 noError:
 
@@ -222,10 +225,6 @@ Error:
         .cantOpenFile   db      "Can't open file: "
         .cantOpenFile_:
 
-TestFile:
-        .path           db      "file\path\image.bmp", 0
-        .path_:
-
 Const:
 lpBuffer        db      10 dup (0)
 lpCharsRead     dd      ?
@@ -251,7 +250,8 @@ include 'ColorTable.asm'
 ; ======== Imports ========
 section         ".idata" import data readable
  
-library         Kernel32, "Kernel32.dll"
+library         Kernel32, "Kernel32.dll",\
+                Shlwapi, "Shlwapi.dll"
  
 import          Kernel32,\
                 GetStdHandle, "GetStdHandle",\
@@ -266,4 +266,8 @@ import          Kernel32,\
                 GetProcessHeap, "GetProcessHeap",\
                 HeapAlloc, "HeapAlloc",\
                 SetConsoleWindowInfo, "SetConsoleWindowInfo",\
-                SetConsoleScreenBufferSize, "SetConsoleScreenBufferSize"
+                SetConsoleScreenBufferSize, "SetConsoleScreenBufferSize",\
+                GetCommandLine, "GetCommandLineA"
+
+import          Shlwapi,\
+                PathGetArgs, "PathGetArgsA"
