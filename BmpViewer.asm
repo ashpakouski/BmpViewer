@@ -16,13 +16,15 @@ start:
 
         invoke  GetCommandLine
         invoke  PathGetArgs, EAX
+        mov     [Image.path], EAX
         invoke  CreateFileA, EAX, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL
         mov     [Handle.file], EAX
 
         cmp     EAX, INVALID_HANDLE_VALUE
         jne     noError
         invoke  WriteConsole, [Handle.stdout], Error.cantOpenFile, Error.cantOpenFile_ - Error.cantOpenFile, NULL, NULL
-        ;invoke  WriteConsole, [Handle.stdout], TestFile.path, TestFile.path_ - TestFile.path, NULL, NULL
+        stdcall StringLength, [Image.path]
+        invoke  WriteConsole, [Handle.stdout], [Image.path], EAX, NULL, NULL
         jmp     exit
 noError:
 
@@ -73,6 +75,18 @@ innerLoop:
 exit:
         invoke  ReadConsole, [Handle.stdin], lpBuffer, 1, lpCharsRead, NULL
         invoke  ExitProcess, 0
+
+proc    StringLength, string
+        mov     ECX, -1
+        xor     EAX, EAX
+        mov     EDI, [string]
+        cld
+        repne   scasb
+        not     ECX
+        dec     ECX
+        mov     EAX, ECX
+        ret
+endp
 
 proc    AddCrlfIfNeeded
         mov     EAX, [Image.width]
@@ -239,6 +253,7 @@ Handle:
         .processHeap    dd      ?
 
 Image:
+        .path           dd      ?
         .width          dd      ?
         .height         dd      ?
         .offset         dd      ?
