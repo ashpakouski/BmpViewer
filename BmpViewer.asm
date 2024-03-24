@@ -15,9 +15,17 @@ start:
         invoke  SetConsoleTitle, String.appTitle
 
         invoke  GetCommandLine
+        mov     [App.launchArgs], EAX
         invoke  PathGetArgs, EAX
         mov     [Image.path], EAX
-        invoke  CreateFileA, EAX, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL
+        stdcall StringLength, [App.launchArgs]
+        add     EAX, [App.launchArgs]
+        cmp     EAX, [Image.path]
+        jne     @F
+        invoke  WriteConsole, [Handle.stdout], Error.noFileSpecified, Error.noFileSpecified_ - Error.noFileSpecified, NULL, NULL
+        jmp     exit
+@@:
+        invoke  CreateFileA, [Image.path], GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL
         mov     [Handle.file], EAX
 
         cmp     EAX, INVALID_HANDLE_VALUE
@@ -73,20 +81,33 @@ innerLoop:
         jb      outerLoop
 
 exit:
-        invoke  ReadConsole, [Handle.stdin], lpBuffer, 1, lpCharsRead, NULL
+        invoke  ReadConsole, [Handle.stdin], Console.readBuffer, 1, Console.lpCharsRead, NULL
         invoke  ExitProcess, 0
 
 proc    StringLength, string
-        mov     ECX, -1
         xor     EAX, EAX
-        mov     EDI, [string]
-        cld
-        repne   scasb
-        not     ECX
-        dec     ECX
-        mov     EAX, ECX
+        mov     EBX, [string]
+@@:
+        cmp     byte[EBX], 0
+        je      return
+        inc     EAX
+        inc     EBX
+        jmp     @B
+return:
         ret
 endp
+
+;proc    StringLength, string
+;        mov     ECX, -1
+;        xor     EAX, EAX
+;        mov     EDI, [string]
+;        cld
+;        repne   scasb
+;        not     ECX
+;        dec     ECX
+;        mov     EAX, ECX
+;        ret
+;endp
 
 proc    AddCrlfIfNeeded
         mov     EAX, [Image.width]
@@ -236,14 +257,17 @@ String:
         .appTitle       db      "Pixel Viewer", 0
 
 Error:
+        .noFileSpecified  db    "No file specified. To use this app drop your BMP right on the app launcher icon."
+        .noFileSpecified_:
         .cantOpenFile   db      "Can't open file: "
         .cantOpenFile_:
 
-Const:
-lpBuffer        db      10 dup (0)
-lpCharsRead     dd      ?
+App:
+        .launchArgs     dd      ?
 
 Console:
+        .readBuffer     db      ?
+        .lpCharsRead    dd      ?
         .defaultWidth   dd      120
 
 Handle:
