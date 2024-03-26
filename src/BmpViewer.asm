@@ -3,6 +3,7 @@ format      PE console 4.0
 entry       start
 
 include     "win32a.inc"
+include     "ValidationUtils.asm"
 
 section     ".text" code readable executable
  
@@ -22,7 +23,7 @@ start:
         add     EAX, [App.launchArgs]
         cmp     EAX, [Image.path]
         jne     @F
-        invoke  WriteConsole, [Handle.stdout], Error.noFileSpecified, Error.noFileSpecified_ - Error.noFileSpecified, NULL, NULL
+        invoke  WriteConsole, [Handle.stdout], Error.noFileSelected, Error.noFileSelected_ - Error.noFileSelected, NULL, NULL
         jmp     exit
 @@:
         invoke  CreateFileA, [Image.path], GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL
@@ -257,8 +258,8 @@ String:
         .appTitle       db      "Pixel Viewer", 0
 
 Error:
-        .noFileSpecified  db    "No file specified. To use this app drop your BMP right on the app launcher icon."
-        .noFileSpecified_:
+        .noFileSelected db    "No file selected. To use this app drop your BMP right on the app launcher icon."
+        .noFileSelected_:
         .cantOpenFile   db      "Can't open file: "
         .cantOpenFile_:
 
