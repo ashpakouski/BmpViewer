@@ -1,12 +1,14 @@
-format      PE console 4.0
+format  PE console 4.0
 
-entry       start
+entry   start
 
-include     "win32a.inc"
-include     "ValidationUtils.asm"
+include "win32a.inc"
 
-section     ".text" code readable executable
- 
+section ".code" code readable executable
+
+include "StringUtils.asm"
+include "ConsoleUtils.asm"
+
 start:
         invoke  GetStdHandle, STD_OUTPUT_HANDLE
         mov     [Handle.stdout], EAX
@@ -15,17 +17,14 @@ start:
 
         invoke  SetConsoleTitle, String.appTitle
 
-        invoke  GetCommandLine
-        mov     [App.launchArgs], EAX
-        invoke  PathGetArgs, EAX
-        mov     [Image.path], EAX
-        stdcall StringLength, [App.launchArgs]
-        add     EAX, [App.launchArgs]
-        cmp     EAX, [Image.path]
+        stdcall GetFirstLaunchArgument
+        cmp     EAX, NULL
         jne     @F
         invoke  WriteConsole, [Handle.stdout], Error.noFileSelected, Error.noFileSelected_ - Error.noFileSelected, NULL, NULL
         jmp     exit
 @@:
+        mov     [Image.path], EAX
+
         invoke  CreateFileA, [Image.path], GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL
         mov     [Handle.file], EAX
 
@@ -84,31 +83,6 @@ innerLoop:
 exit:
         invoke  ReadConsole, [Handle.stdin], Console.readBuffer, 1, Console.lpCharsRead, NULL
         invoke  ExitProcess, 0
-
-proc    StringLength, string
-        xor     EAX, EAX
-        mov     EBX, [string]
-@@:
-        cmp     byte[EBX], 0
-        je      return
-        inc     EAX
-        inc     EBX
-        jmp     @B
-return:
-        ret
-endp
-
-;proc    StringLength, string
-;        mov     ECX, -1
-;        xor     EAX, EAX
-;        mov     EDI, [string]
-;        cld
-;        repne   scasb
-;        not     ECX
-;        dec     ECX
-;        mov     EAX, ECX
-;        ret
-;endp
 
 proc    AddCrlfIfNeeded
         mov     EAX, [Image.width]
@@ -248,7 +222,7 @@ tableLoop:
 endp
 
 ; ======== Data ========
-section         ".data" data readable writeable
+section ".data" data readable writeable
 
 String:
         .pixel          db      2 dup 219
@@ -288,7 +262,7 @@ Image:
 include 'ColorTable.asm'
 
 ; ======== Imports ========
-section         ".idata" import data readable
+section ".idata" import data readable
  
 library         Kernel32, "Kernel32.dll",\
                 Shlwapi, "Shlwapi.dll"
