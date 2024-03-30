@@ -10,50 +10,48 @@ include "StringUtils.asm"
 include "ConsoleUtils.asm"
 
 start:
-        invoke  GetStdHandle, STD_OUTPUT_HANDLE
-        mov     [Handle.stdout], EAX
-        invoke  GetStdHandle, STD_INPUT_HANDLE
-        mov     [Handle.stdin], EAX
+        stdcall loadIoHandles
+        invoke  setConsoleTitle, string.appTitle
 
-        invoke  SetConsoleTitle, String.appTitle
-
-        stdcall GetFirstLaunchArgument
+        ; Get image path, which is passed in the first launch argument
+        ; or show error message, if there is no path provided
+        stdcall getFirstLaunchArgument
         cmp     EAX, NULL
         jne     @F
-        invoke  WriteConsole, [Handle.stdout], Error.noFileSelected, Error.noFileSelected_ - Error.noFileSelected, NULL, NULL
+        invoke  writeConsole, [handle.stdout], error.noFileSelected, error.noFileSelected_ - error.noFileSelected, NULL, NULL
         jmp     exit
 @@:
-        mov     [Image.path], EAX
+        mov     [image.path], EAX
 
-        invoke  CreateFileA, [Image.path], GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL
-        mov     [Handle.file], EAX
-
+        ; Get file handle or show error message, if handle couldn't be obtained
+        invoke  createFile, [image.path], GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL
         cmp     EAX, INVALID_HANDLE_VALUE
-        jne     noError
-        invoke  WriteConsole, [Handle.stdout], Error.cantOpenFile, Error.cantOpenFile_ - Error.cantOpenFile, NULL, NULL
-        stdcall StringLength, [Image.path]
-        invoke  WriteConsole, [Handle.stdout], [Image.path], EAX, NULL, NULL
+        jne     @F
+        invoke  writeConsole, [handle.stdout], error.cantOpenFile, error.cantOpenFile_ - error.cantOpenFile, NULL, NULL
+        stdcall stringLength, [image.path]
+        invoke  writeConsole, [handle.stdout], [image.path], EAX, NULL, NULL
         jmp     exit
-noError:
+@@:
+        mov     [handle.file], EAX
 
-        invoke  GetFileSize, [Handle.file], NULL
-        mov     [Image.size], EAX
+        invoke  getFileSize, [handle.file], NULL
+        mov     [image.size], EAX
 
-        invoke  GetProcessHeap
-        mov     [Handle.processHeap], EAX
+        invoke  getProcessHeap
+        mov     [handle.processHeap], EAX
 
-        invoke  HeapAlloc, [Handle.processHeap], HEAP_ZERO_MEMORY, [Image.size]
-        mov     [Image.bytesPtr], EAX
+        invoke  heapAlloc, [handle.processHeap], HEAP_ZERO_MEMORY, [image.size]
+        mov     [image.bytesPtr], EAX
 
-        invoke  ReadFile, [Handle.file], [Image.bytesPtr], [Image.size], NULL, NULL
-        stdcall GetBmpOffset, [Image.bytesPtr]
-        mov     [Image.offset], EAX
-        stdcall GetBmpWidth, [Image.bytesPtr], Image.width
-        mov     [Image.width], EAX
-        stdcall GetBmpHeight, [Image.bytesPtr], Image.height
-        mov     [Image.height], EAX
+        invoke  readFile, [handle.file], [image.bytesPtr], [image.size], NULL, NULL
+        stdcall getBmpOffset, [image.bytesPtr]
+        mov     [image.offset], EAX
+        stdcall getBmpWidth, [image.bytesPtr], image.width
+        mov     [image.width], EAX
+        stdcall getBmpHeight, [image.bytesPtr], image.height
+        mov     [image.height], EAX
 
-        stdcall SetConsoleSize, [Handle.stdout], [Image.width], [Image.height]
+        stdcall setConsoleSize, [handle.stdout], [image.width], [image.height]
 
 @@:
         xor     EAX, EAX
@@ -61,83 +59,64 @@ outerLoop:
         xor     EBX, EBX
 innerLoop:
         pushad
-        stdcall GetPixel, [Image.bytesPtr], [Image.offset], [Image.width], [Image.height], EBX, EAX
-        stdcall ConvertPixel, EAX, ColorTable, (ColorTable_ - ColorTable) / 3
+        stdcall getPixel, [image.bytesPtr], [image.offset], [image.width], [image.height], EBX, EAX
+        stdcall convertPixel, EAX, ColorTable, (ColorTable_ - ColorTable) / 3
 
-        invoke  SetConsoleTextAttribute, [Handle.stdout], EAX
-        invoke  WriteConsole, [Handle.stdout], String.pixel, String.pixel_ - String.pixel, NULL, NULL
+        invoke  setConsoleTextAttribute, [handle.stdout], EAX
+        invoke  writeConsole, [handle.stdout], string.pixel, string.pixel_ - string.pixel, NULL, NULL
         popad
 
         inc     EBX
-        cmp     EBX, [Image.width]
+        cmp     EBX, [image.width]
         jb      innerLoop
 
         pushad
-        stdcall AddCrlfIfNeeded
+        stdcall addCrlfIfNeeded
         popad
 
         inc     EAX
-        cmp     EAX, [Image.height]
+        cmp     EAX, [image.height]
         jb      outerLoop
 
 exit:
-        invoke  ReadConsole, [Handle.stdin], Console.readBuffer, 1, Console.lpCharsRead, NULL
-        invoke  ExitProcess, 0
+        invoke  readConsole, [handle.stdin], console.readBuffer, 1, console.lpCharsRead, NULL
+        invoke  exitProcess, 0
 
-proc    AddCrlfIfNeeded
-        mov     EAX, [Image.width]
+proc    loadIoHandles
+        invoke  getStdHandle, STD_OUTPUT_HANDLE
+        mov     [handle.stdout], EAX
+        invoke  getStdHandle, STD_INPUT_HANDLE
+        mov     [handle.stdin], EAX
+        ret
+endp
+
+proc    addCrlfIfNeeded
+        mov     EAX, [image.width]
         mov     EBX, 2
         mul     EBX
-        cmp     EAX, [Console.defaultWidth]
+        cmp     EAX, [console.defaultWidth]
         jae     @F
-        invoke  WriteConsole, [Handle.stdout], String.crlf, String.crlf_ - String.crlf, NULL, NULL
+        invoke  writeConsole, [handle.stdout], string.crlf, string.crlf_ - string.crlf, NULL, NULL
 @@:
         ret
 endp
 
-proc    SetConsoleSize, stdoutHandle, width, height
-        locals
-                windowSize  dw      4 dup ?     ; https://learn.microsoft.com/en-us/windows/console/small-rect-str
-                bufferSize  dw      2 dup ?     ; https://learn.microsoft.com/en-us/windows/console/coord-str
-        endl
-
-        xor     EAX, EAX
-        mov     dword[windowSize], EAX ; Fills 4 bytes
-        mov     EAX, [width]
-        mov     EBX, 2
-        mul     EBX
-        mov     [bufferSize], AX
-        dec     EAX
-        mov     [windowSize + 4], AX
-
-        mov     EAX, [height]
-        mov     [bufferSize + 2], AX
-        dec     EAX
-        mov     [windowSize + 6], AX
-
-        lea     EAX, [windowSize]
-        invoke  SetConsoleWindowInfo, [stdoutHandle], 1, EAX
-        lea     EAX, [bufferSize]
-        invoke  SetConsoleScreenBufferSize, [stdoutHandle], EAX
+proc    getBmpOffset, bmpBytesPtr
+        stdcall getBmpParam, [bmpBytesPtr], 0x0A
         ret
 endp
 
-proc    GetBmpOffset, bmpBytesPtr
-        stdcall GetBmpParam, [bmpBytesPtr], 0x0A
+proc    getBmpWidth, bmpBytesPtr
+        stdcall getBmpParam, [bmpBytesPtr], 0x12
         ret
 endp
 
-proc    GetBmpWidth, bmpBytesPtr
-        stdcall GetBmpParam, [bmpBytesPtr], 0x12
+proc    getBmpHeight, bmpBytesPtr
+        stdcall getBmpParam, [bmpBytesPtr], 0x16
         ret
 endp
 
-proc    GetBmpHeight, bmpBytesPtr
-        stdcall GetBmpParam, [bmpBytesPtr], 0x16
-        ret
-endp
-
-proc    GetBmpParam, bmpBytesPtr, paramOffset
+proc    getBmpParam, bmpBytesPtr, paramOffset
         mov     EAX, [bmpBytesPtr]
         add     EAX, [paramOffset]
         mov     EAX, [EAX]
@@ -146,7 +125,7 @@ endp
 
         ; Result: xx BB RR GG
         ;                  ^^ AL
-proc    GetPixel, bmpBytesPtr, bmpOffset, bmpWidth, bmpHeight, pixelX, pixelY
+proc    getPixel, bmpBytesPtr, bmpOffset, bmpWidth, bmpHeight, pixelX, pixelY
         mov     EAX, [bmpHeight]
         dec     EAX
         sub     EAX, [pixelY]
@@ -160,7 +139,7 @@ proc    GetPixel, bmpBytesPtr, bmpOffset, bmpWidth, bmpHeight, pixelX, pixelY
         ret
 endp
 
-proc    ConvertPixel, pixel, colorTable, tableSize
+proc    convertPixel, pixel, colorTable, tableSize
         locals
                 b           db      ?
                 g           db      ?
@@ -221,67 +200,66 @@ tableLoop:
         ret
 endp
 
-; ======== Data ========
+
+
 section ".data" data readable writeable
 
-String:
+include "Image.asm"
+
+string:
         .pixel          db      2 dup 219
         .pixel_:
         .crlf           db      13, 10
         .crlf_:
         .appTitle       db      "Pixel Viewer", 0
 
-Error:
-        .noFileSelected db    "No file selected. To use this app drop your BMP right on the app launcher icon."
+error:
+        .noFileSelected db      "No file selected. To use this app drop your BMP right on the app launcher icon."
         .noFileSelected_:
         .cantOpenFile   db      "Can't open file: "
         .cantOpenFile_:
 
-App:
+app:
         .launchArgs     dd      ?
 
-Console:
+console:
         .readBuffer     db      ?
         .lpCharsRead    dd      ?
         .defaultWidth   dd      120
 
-Handle:
+handle:
         .stdin          dd      ?
         .stdout         dd      ?
         .file           dd      ?
         .processHeap    dd      ?
 
-Image:
-        .path           dd      ?
-        .width          dd      ?
-        .height         dd      ?
-        .offset         dd      ?
-        .size           dd      ?
-        .bytesPtr       dd      ?
+image   Image
+
 
 include 'ColorTable.asm'
 
-; ======== Imports ========
+
+
 section ".idata" import data readable
  
 library         Kernel32, "Kernel32.dll",\
                 Shlwapi, "Shlwapi.dll"
  
 import          Kernel32,\
-                GetStdHandle, "GetStdHandle",\
-                WriteConsole, "WriteConsoleA",\
-                ReadConsole, "ReadConsoleA",\
-                ExitProcess, "ExitProcess",\
-                SetConsoleTitle, "SetConsoleTitleA",\
-                CreateFileA, "CreateFileA",\
-                ReadFile, "ReadFile",\
-                SetConsoleTextAttribute, "SetConsoleTextAttribute",\
-                GetFileSize, "GetFileSize",\
-                GetProcessHeap, "GetProcessHeap",\
-                HeapAlloc, "HeapAlloc",\
-                SetConsoleWindowInfo, "SetConsoleWindowInfo",\
-                SetConsoleScreenBufferSize, "SetConsoleScreenBufferSize",\
-                GetCommandLine, "GetCommandLineA"
+                getStdHandle, "GetStdHandle",\
+                writeConsole, "WriteConsoleA",\
+                readConsole, "ReadConsoleA",\
+                exitProcess, "ExitProcess",\
+                setConsoleTitle, "SetConsoleTitleA",\
+                createFile, "CreateFileA",\
+                readFile, "ReadFile",\
+                setConsoleTextAttribute, "SetConsoleTextAttribute",\
+                getFileSize, "GetFileSize",\
+                getProcessHeap, "GetProcessHeap",\
+                heapAlloc, "HeapAlloc",\
+                setConsoleWindowInfo, "SetConsoleWindowInfo",\
+                setConsoleScreenBufferSize, "SetConsoleScreenBufferSize",\
+                getCommandLine, "GetCommandLineA"
 
 import          Shlwapi,\
-                PathGetArgs, "PathGetArgsA"
+                pathGetArgs, "PathGetArgsA"
