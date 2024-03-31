@@ -8,6 +8,7 @@ section ".code" code readable executable
 
 include "StringUtils.asm"
 include "ConsoleUtils.asm"
+include "FileUtils.asm"
 
 start:
         stdcall loadIoHandles
@@ -34,26 +35,10 @@ start:
 @@:
         mov     [handle.file], EAX
 
-        invoke  getFileSize, [handle.file], NULL
-        mov     [image.size], EAX
-
-        invoke  getProcessHeap
-        mov     [handle.processHeap], EAX
-
-        invoke  heapAlloc, [handle.processHeap], HEAP_ZERO_MEMORY, [image.size]
-        mov     [image.bytesPtr], EAX
-
-        invoke  readFile, [handle.file], [image.bytesPtr], [image.size], NULL, NULL
-        stdcall getBmpOffset, [image.bytesPtr]
-        mov     [image.offset], EAX
-        stdcall getBmpWidth, [image.bytesPtr], image.width
-        mov     [image.width], EAX
-        stdcall getBmpHeight, [image.bytesPtr], image.height
-        mov     [image.height], EAX
-
+        stdcall readBytes, [handle.file], image.bytesPtr, image.size, TRUE
+        stdcall fillBmpParams, image
         stdcall setConsoleSize, [handle.stdout], [image.width], [image.height]
 
-@@:
         xor     EAX, EAX
 outerLoop:
         xor     EBX, EBX
@@ -80,6 +65,7 @@ innerLoop:
 
 exit:
         invoke  readConsole, [handle.stdin], console.readBuffer, 1, console.lpCharsRead, NULL
+        stdcall closeIoHandles
         invoke  exitProcess, 0
 
 proc    loadIoHandles
@@ -87,6 +73,12 @@ proc    loadIoHandles
         mov     [handle.stdout], EAX
         invoke  getStdHandle, STD_INPUT_HANDLE
         mov     [handle.stdin], EAX
+        ret
+endp
+
+proc    closeIoHandles
+        invoke  closeHandle, [handle.stdout]
+        invoke  closeHandle, [handle.stdin]
         ret
 endp
 
@@ -98,6 +90,28 @@ proc    addCrlfIfNeeded
         jae     @F
         invoke  writeConsole, [handle.stdout], string.crlf, string.crlf_ - string.crlf, NULL, NULL
 @@:
+        ret
+endp
+
+proc    fillBmpParams, imagePtr
+        locals
+                bytesPtr    dd      ?
+        endl
+
+        mov     EAX, [imagePtr]
+        mov     EAX, [EAX + Image.bytesPtr]
+        mov     [bytesPtr], EAX
+
+        mov     EBX, [imagePtr] ; Functions below don't modify EBX
+
+        stdcall getBmpOffset, [bytesPtr]
+        mov     [EBX + Image.offset], EAX
+        
+        stdcall getBmpWidth, [bytesPtr]
+        mov     [EBX + Image.width], EAX
+
+        stdcall getBmpHeight, [bytesPtr]
+        mov     [EBX + Image.height], EAX
         ret
 endp
 
@@ -231,10 +245,8 @@ handle:
         .stdin          dd      ?
         .stdout         dd      ?
         .file           dd      ?
-        .processHeap    dd      ?
 
 image   Image
-
 
 include 'ColorTable.asm'
 
@@ -259,7 +271,8 @@ import          Kernel32,\
                 heapAlloc, "HeapAlloc",\
                 setConsoleWindowInfo, "SetConsoleWindowInfo",\
                 setConsoleScreenBufferSize, "SetConsoleScreenBufferSize",\
-                getCommandLine, "GetCommandLineA"
+                getCommandLine, "GetCommandLineA",\
+                closeHandle, "CloseHandle"
 
 import          Shlwapi,\
                 pathGetArgs, "PathGetArgsA"
