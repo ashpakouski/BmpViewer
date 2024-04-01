@@ -4,6 +4,9 @@ entry   start
 
 include "win32a.inc"
 
+DEFAULT_CONSOLE_WIDTH_CHARS = 120
+DEFAULT_CONSOLE_WIDTH_PIXELS = DEFAULT_CONSOLE_WIDTH_CHARS / (string.pixel_ - string.pixel)
+
 section ".code" code readable executable
 
 include "StringUtils.asm"
@@ -37,6 +40,17 @@ start:
 
         stdcall readBytes, [handle.file], image.bytesPtr, image.size, TRUE
         stdcall fillBmpParams, image
+
+        ; Show warning message, if selected image is wider than a console.
+        ; For some reason, I couldn't increase console size programmatically
+        ; and I'm not even sure if it's possible
+        cmp     [image.width], DEFAULT_CONSOLE_WIDTH_PIXELS
+        jbe     @F
+        invoke  writeConsole, [handle.stdout], error.imageTooWide, error.imageTooWide_ - error.imageTooWide, NULL, NULL
+        invoke  readConsole, [handle.stdin], console.readBuffer, 2, console.lpCharsRead, NULL
+        invoke  setConsoleCursorPosition, [handle.stdout], 0
+@@:
+
         stdcall setConsoleSize, [handle.stdout], [image.width], [image.height]
 
         xor     EAX, EAX
@@ -64,7 +78,7 @@ innerLoop:
         jb      outerLoop
 
 exit:
-        invoke  readConsole, [handle.stdin], console.readBuffer, 1, console.lpCharsRead, NULL
+        invoke  readConsole, [handle.stdin], console.readBuffer, 2, console.lpCharsRead, NULL
         stdcall closeIoHandles
         invoke  exitProcess, 0
 
@@ -86,7 +100,7 @@ proc    addCrlfIfNeeded
         mov     EAX, [image.width]
         mov     EBX, 2
         mul     EBX
-        cmp     EAX, [console.defaultWidth]
+        cmp     EAX, DEFAULT_CONSOLE_WIDTH_PIXELS
         jae     @F
         invoke  writeConsole, [handle.stdout], string.crlf, string.crlf_ - string.crlf, NULL, NULL
 @@:
@@ -232,14 +246,15 @@ error:
         .noFileSelected_:
         .cantOpenFile   db      "Can't open file: "
         .cantOpenFile_:
+        .imageTooWide   db      "Selected image is too wide. You'll have to resize console manually. Press Enter to continue."
+        .imageTooWide_:
 
 app:
         .launchArgs     dd      ?
 
 console:
-        .readBuffer     db      ?
+        .readBuffer     dw      ?
         .lpCharsRead    dd      ?
-        .defaultWidth   dd      120
 
 handle:
         .stdin          dd      ?
@@ -272,7 +287,8 @@ import          Kernel32,\
                 setConsoleWindowInfo, "SetConsoleWindowInfo",\
                 setConsoleScreenBufferSize, "SetConsoleScreenBufferSize",\
                 getCommandLine, "GetCommandLineA",\
-                closeHandle, "CloseHandle"
+                closeHandle, "CloseHandle",\
+                setConsoleCursorPosition, "SetConsoleCursorPosition"
 
 import          Shlwapi,\
                 pathGetArgs, "PathGetArgsA"
