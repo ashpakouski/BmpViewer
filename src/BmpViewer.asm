@@ -9,9 +9,7 @@ DEFAULT_CONSOLE_WIDTH_PIXELS = DEFAULT_CONSOLE_WIDTH_CHARS / (string.pixel_ - st
 
 section ".code" code readable executable
 
-include "StringUtils.asm"
-include "ConsoleUtils.asm"
-include "FileUtils.asm"
+include "utils/Index.inc"
 
 start:
         stdcall loadIoHandles
@@ -47,40 +45,50 @@ start:
         cmp     [image.width], DEFAULT_CONSOLE_WIDTH_PIXELS
         jbe     @F
         invoke  writeConsole, [handle.stdout], error.imageTooWide, error.imageTooWide_ - error.imageTooWide, NULL, NULL
-        invoke  readConsole, [handle.stdin], console.readBuffer, 2, console.lpCharsRead, NULL
+        invoke  readConsole, [handle.stdin], console.readBuffer, 2, console.charsRead, NULL
         invoke  setConsoleCursorPosition, [handle.stdout], 0
 @@:
 
-        stdcall setConsoleSize, [handle.stdout], [image.width], [image.height]
+        stdcall drawImage, [handle.stdout], image, string.pixel
+
+exit:
+        invoke  readConsole, [handle.stdin], console.readBuffer, 2, console.charsRead, NULL
+        stdcall closeIoHandles
+        invoke  exitProcess, 0
+
+        ; pixelString is null-terminated
+proc    drawImage, stdoutHandle, image, pixelString
+        mov     EDX, [image]
+        push    EDX
+        stdcall setConsoleSize, [stdoutHandle], [EDX + Image.width], [EDX + Image.height]
+        pop     EDX
 
         xor     EAX, EAX
-outerLoop:
-        xor     EBX, EBX
-innerLoop:
-        pushad
-        stdcall getPixel, [image.bytesPtr], [image.offset], [image.width], [image.height], EBX, EAX
-        stdcall convertPixel, EAX, ColorTable, (ColorTable_ - ColorTable) / 3
+lineLoop:
 
-        invoke  setConsoleTextAttribute, [handle.stdout], EAX
-        invoke  writeConsole, [handle.stdout], string.pixel, string.pixel_ - string.pixel, NULL, NULL
+        xor     EBX, EBX
+columnLoop:
+        pushad
+        stdcall getPixel, [image], EBX, EAX
+        stdcall convertPixel, EAX, ColorTable, (ColorTable_ - ColorTable) / 3
+        invoke  setConsoleTextAttribute, [stdoutHandle], EAX
+        stdcall stringLength, [pixelString]
+        invoke  writeConsole, [stdoutHandle], [pixelString], EAX, NULL, NULL
         popad
 
         inc     EBX
-        cmp     EBX, [image.width]
-        jb      innerLoop
+        cmp     EBX, [EDX + Image.width]
+        jb      columnLoop
 
         pushad
-        stdcall addCrlfIfNeeded
+        stdcall addCrlfIfNeeded, [EDX + Image.width], [stdoutHandle]
         popad
 
         inc     EAX
-        cmp     EAX, [image.height]
-        jb      outerLoop
-
-exit:
-        invoke  readConsole, [handle.stdin], console.readBuffer, 2, console.lpCharsRead, NULL
-        stdcall closeIoHandles
-        invoke  exitProcess, 0
+        cmp     EAX, [EDX + Image.height]
+        jb      lineLoop
+        ret
+endp
 
 proc    loadIoHandles
         invoke  getStdHandle, STD_OUTPUT_HANDLE
@@ -96,139 +104,21 @@ proc    closeIoHandles
         ret
 endp
 
-proc    addCrlfIfNeeded
-        mov     EAX, [image.width]
+proc    addCrlfIfNeeded, imageWidth, stdoutHandle
+        locals
+                crlf    db      13, 10      
+        endl
+
+        mov     EAX, [imageWidth]
         mov     EBX, 2
         mul     EBX
         cmp     EAX, DEFAULT_CONSOLE_WIDTH_PIXELS
         jae     @F
-        invoke  writeConsole, [handle.stdout], string.crlf, string.crlf_ - string.crlf, NULL, NULL
+        lea     EAX, [crlf]
+        invoke  writeConsole, [stdoutHandle], EAX, 2, NULL, NULL
 @@:
         ret
 endp
-
-proc    fillBmpParams, imagePtr
-        locals
-                bytesPtr    dd      ?
-        endl
-
-        mov     EAX, [imagePtr]
-        mov     EAX, [EAX + Image.bytesPtr]
-        mov     [bytesPtr], EAX
-
-        mov     EBX, [imagePtr] ; Functions below don't modify EBX
-
-        stdcall getBmpOffset, [bytesPtr]
-        mov     [EBX + Image.offset], EAX
-        
-        stdcall getBmpWidth, [bytesPtr]
-        mov     [EBX + Image.width], EAX
-
-        stdcall getBmpHeight, [bytesPtr]
-        mov     [EBX + Image.height], EAX
-        ret
-endp
-
-proc    getBmpOffset, bmpBytesPtr
-        stdcall getBmpParam, [bmpBytesPtr], 0x0A
-        ret
-endp
-
-proc    getBmpWidth, bmpBytesPtr
-        stdcall getBmpParam, [bmpBytesPtr], 0x12
-        ret
-endp
-
-proc    getBmpHeight, bmpBytesPtr
-        stdcall getBmpParam, [bmpBytesPtr], 0x16
-        ret
-endp
-
-proc    getBmpParam, bmpBytesPtr, paramOffset
-        mov     EAX, [bmpBytesPtr]
-        add     EAX, [paramOffset]
-        mov     EAX, [EAX]
-        ret
-endp
-
-        ; Result: xx BB RR GG
-        ;                  ^^ AL
-proc    getPixel, bmpBytesPtr, bmpOffset, bmpWidth, bmpHeight, pixelX, pixelY
-        mov     EAX, [bmpHeight]
-        dec     EAX
-        sub     EAX, [pixelY]
-        mul     [bmpWidth]
-        add     EAX, [pixelX]
-        mov     EBX, 3
-        mul     EBX
-        add     EAX, [bmpOffset]
-        add     EAX, [bmpBytesPtr]
-        mov     EAX, [EAX] ; FIXME: Access violation?
-        ret
-endp
-
-proc    convertPixel, pixel, colorTable, tableSize
-        locals
-                b           db      ?
-                g           db      ?
-                r           db      ?
-                minSum      dd      0xEFFFFFFF
-                minColorId  dd      ?
-                currentSum  dd      ?
-        endl
-
-        mov     EAX, [pixel]
-        mov     [b], AL
-        shr     EAX, 8
-        mov     [g], AL
-        shr     EAX, 8
-        mov     [r], AL
-
-        mov     ECX, 0
-tableLoop:
-        mov     EAX, 3
-        mul     ECX
-        add     EAX, [colorTable]
-        mov     EBX, EAX
-
-        mov     [currentSum], 0
-
-        movzx   EAX, [b]
-        movzx   EDX, byte[EBX]
-        sub     EAX, EDX
-        mul     EAX
-        add     [currentSum], EAX
-        inc     EBX
-
-        movzx   EAX, [g]
-        movzx   EDX, byte[EBX]
-        sub     EAX, EDX
-        mul     EAX
-        add     [currentSum], EAX
-        inc     EBX
-
-        movzx   EAX, [r]
-        movzx   EDX, byte[EBX]
-        sub     EAX, EDX
-        mul     EAX
-        add     [currentSum], EAX
-
-        mov     EAX, [currentSum]
-        cmp     EAX, [minSum]
-        jae     @F
-        mov     [minSum], EAX
-        mov     [minColorId], ECX
-@@:
-
-        inc     ECX
-        cmp     ECX, [tableSize]
-        jb      tableLoop
-
-        mov     EAX, [minColorId]
-        ret
-endp
-
-
 
 section ".data" data readable writeable
 
@@ -237,8 +127,7 @@ include "Image.asm"
 string:
         .pixel          db      2 dup 219
         .pixel_:
-        .crlf           db      13, 10
-        .crlf_:
+        .pixel_null_    db      0
         .appTitle       db      "Pixel Viewer", 0
 
 error:
@@ -254,7 +143,7 @@ app:
 
 console:
         .readBuffer     dw      ?
-        .lpCharsRead    dd      ?
+        .charsRead    dd      ?
 
 handle:
         .stdin          dd      ?
@@ -264,8 +153,6 @@ handle:
 image   Image
 
 include 'ColorTable.asm'
-
-
 
 section ".idata" import data readable
  
