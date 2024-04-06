@@ -9,7 +9,8 @@ DEFAULT_CONSOLE_WIDTH_PIXELS = DEFAULT_CONSOLE_WIDTH_CHARS / (string.pixel_ - st
 
 section ".code" code readable executable
 
-include "utils/Index.inc"
+include "utils/Utils.inc"
+include "presentation/Presentation.inc"
 
 start:
         stdcall loadIoHandles
@@ -56,40 +57,6 @@ exit:
         stdcall closeIoHandles
         invoke  exitProcess, 0
 
-        ; pixelString is null-terminated
-proc    drawImage, stdoutHandle, image, pixelString
-        mov     EDX, [image]
-        push    EDX
-        stdcall setConsoleSize, [stdoutHandle], [EDX + Image.width], [EDX + Image.height]
-        pop     EDX
-
-        xor     EAX, EAX
-lineLoop:
-
-        xor     EBX, EBX
-columnLoop:
-        pushad
-        stdcall getPixel, [image], EBX, EAX
-        stdcall convertPixel, EAX, ColorTable, (ColorTable_ - ColorTable) / 3
-        invoke  setConsoleTextAttribute, [stdoutHandle], EAX
-        stdcall stringLength, [pixelString]
-        invoke  writeConsole, [stdoutHandle], [pixelString], EAX, NULL, NULL
-        popad
-
-        inc     EBX
-        cmp     EBX, [EDX + Image.width]
-        jb      columnLoop
-
-        pushad
-        stdcall addCrlfIfNeeded, [EDX + Image.width], [stdoutHandle]
-        popad
-
-        inc     EAX
-        cmp     EAX, [EDX + Image.height]
-        jb      lineLoop
-        ret
-endp
-
 proc    loadIoHandles
         invoke  getStdHandle, STD_OUTPUT_HANDLE
         mov     [handle.stdout], EAX
@@ -104,25 +71,9 @@ proc    closeIoHandles
         ret
 endp
 
-proc    addCrlfIfNeeded, imageWidth, stdoutHandle
-        locals
-                crlf    db      13, 10      
-        endl
-
-        mov     EAX, [imageWidth]
-        mov     EBX, 2
-        mul     EBX
-        cmp     EAX, DEFAULT_CONSOLE_WIDTH_PIXELS
-        jae     @F
-        lea     EAX, [crlf]
-        invoke  writeConsole, [stdoutHandle], EAX, 2, NULL, NULL
-@@:
-        ret
-endp
-
 section ".data" data readable writeable
 
-include "Image.asm"
+include "model/Model.inc"
 
 string:
         .pixel          db      2 dup 219
@@ -143,7 +94,7 @@ app:
 
 console:
         .readBuffer     dw      ?
-        .charsRead    dd      ?
+        .charsRead      dd      ?
 
 handle:
         .stdin          dd      ?
@@ -151,8 +102,6 @@ handle:
         .file           dd      ?
 
 image   Image
-
-include 'ColorTable.asm'
 
 section ".idata" import data readable
  
