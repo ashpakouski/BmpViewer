@@ -6,6 +6,7 @@ include "win32a.inc"
 
 DEFAULT_CONSOLE_WIDTH_CHARS = 120
 DEFAULT_CONSOLE_WIDTH_PIXELS = DEFAULT_CONSOLE_WIDTH_CHARS / (string.pixel_ - string.pixel)
+BMP_FILE_HEADER = 0x4D42
 
 section ".code" code readable executable
 
@@ -39,6 +40,15 @@ start:
 
         stdcall readBytes, [handle.file], image.bytesPtr, image.size, TRUE
         stdcall fillBmpParams, image
+
+        ; Check, that loaded image is BMP file
+        mov     EAX, [image.bytesPtr]
+        mov     AX, [EAX]
+        cmp     AX, BMP_FILE_HEADER
+        je     @F
+        invoke  writeConsole, [handle.stdout], error.imageIsNotBmp, error.imageIsNotBmp_ - error.imageIsNotBmp, NULL, NULL
+        jmp     exit
+@@:
 
         ; Show warning message, if selected image is wider than a console.
         ; For some reason, I couldn't increase console size programmatically
@@ -88,6 +98,8 @@ error:
         .cantOpenFile_:
         .imageTooWide   db      "Selected image is too wide. You'll have to resize console manually. Press Enter to continue."
         .imageTooWide_:
+        .imageIsNotBmp: db      "Loaded image is not BMP file"
+        .imageIsNotBmp_:
 
 app:
         .launchArgs     dd      ?
